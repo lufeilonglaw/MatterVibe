@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>律师工具箱 · MatterVibe</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="tbx-body">
+
+  <header id="tbx-topbar">
+    <div class="tbx-title">
+      <div class="app-mark">M</div>
+      <div>
+        <div class="tbx-name">律师工具箱</div>
+        <div class="tbx-sub">全部本地计算 · 断网可用 · 输入即出结果</div>
+      </div>
+    </div>
+    <div class="win-controls">
+      <button id="tbx-min" class="icon-btn win-btn" title="最小化">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+      <button id="tbx-close" class="icon-btn win-btn win-close" title="关闭工具箱">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="tbx-main">
+    <div id="tb-nav" class="tb-nav"></div>
+    <div id="tb-panel" class="tb-panel"></div>
+  </div>
+
+  <script src="icons.js"></script>
+  <script src="scrollhint.js"></script>
+  <script src="toolbox.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# 依赖与构建产物
+node_modules/
+dist/
+package-lock.json
+
+# 本地数据库与备份——绝不提交任何真实案件数据
+*.db
+law_practice.db
+backups/
+
+# 系统/编辑器
+.DS_Store
+*.log
+.vscode/
+.idea/
