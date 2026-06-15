@@ -373,6 +373,7 @@ function registerIpc() {
 
   H('records:counts',    (matterId)               => db.getRecordCounts(matterId));
   H('deadlines:list',    ()                       => db.getDeadlines());
+  H('reminders:list',    ()                       => db.getReminders());
 
   H('events:list',   (opts)      => db.listEvents(opts || {}));
   H('events:add',    (data)      => db.addEvent(data));
@@ -660,6 +661,7 @@ function registerIpc() {
 
   H('stages:add',        (matterId, name)         => db.addStage(matterId, name));
   H('stages:rename',     (stageId, name)          => db.renameStage(stageId, name));
+  H('stages:move',       (stageId, toIndex)       => { db.moveStage(stageId, toIndex); return true; });
   H('stages:delete',     (stageId)                => db.deleteStage(stageId));
 
   H('tasks:add',         (stageId, content)       => db.addTask(stageId, content));
@@ -667,6 +669,7 @@ function registerIpc() {
   H('tasks:complete',    (taskId, completed)      => db.setTaskCompleted(taskId, completed));
   H('tasks:delete',      (taskId)                 => db.deleteTask(taskId));
   H('tasks:move',        (taskId, stageId, index) => db.moveTask(taskId, stageId, index));
+  H('tasks:due',         (taskId, due)            => { db.setTaskDue(taskId, due); return true; });
 
   H('templates:list',    ()                       => db.getTemplates());
   H('template:export', async (key) => {

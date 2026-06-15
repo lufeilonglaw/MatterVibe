@@ -1,7 +1,7 @@
 {
   "name": "mattervibe",
   "productName": "MatterVibe",
-  "version": "1.3.2",
+  "version": "1.4.2",
   "description": "MatterVibe —— 以案件为中心的本地任务管理 Mac 客户端（SQLite3 单文件存储）",
   "main": "main.js",
   "scripts": {

@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('api', {
   deleteMail: call('mails:delete'),
   recordCounts:  call('records:counts'),
   listDeadlines: call('deadlines:list'),
+  listReminders: call('reminders:list'),
   listEvents:  call('events:list'),
   addEvent:    call('events:add'),
   updateEvent: call('events:update'),
@@ -72,6 +73,7 @@ contextBridge.exposeInMainWorld('api', {
 
   addStage:      call('stages:add'),
   renameStage:   call('stages:rename'),
+  moveStage:     call('stages:move'),
   deleteStage:   call('stages:delete'),
 
   addTask:       call('tasks:add'),
@@ -79,6 +81,7 @@ contextBridge.exposeInMainWorld('api', {
   completeTask:  call('tasks:complete'),
   deleteTask:    call('tasks:delete'),
   moveTask:      call('tasks:move'),
+  setTaskDue:    call('tasks:due'),
 
   listTemplates: call('templates:list'),
   exportTemplate: call('template:export'),

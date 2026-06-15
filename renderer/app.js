@@ -613,7 +613,7 @@ function renderBoard() {
   empty.classList.add('hidden');
   area.classList.remove('hidden');
 
-  coverSlot.appendChild(renderCoverColumn());
+  renderCoverBar(coverSlot);
   for (const stage of state.matter.stages) {
     board.appendChild(renderStageColumn(stage));
   }
@@ -639,7 +639,172 @@ function initBoardWheel() {
   }, { passive: false });
 }
 
-/* ---------- 4.1 案件信息列 ---------- */
+/* ---------- 4.1 案件信息：顶部信息条（方案 A）---------- */
+// 信息条：一行常驻关键要素 + 操作按钮 + 展开/收起；展开后显示完整封皮
+let coverExpanded = false;
+function renderCoverBar(slot) {
+  slot.innerHTML = '';
+  const bar = document.createElement('div');
+  bar.className = 'cover-bar';
+
+  // 第一行：案件名 + 关键要素摘要 + 操作 + 展开钮
+  const top = document.createElement('div');
+  top.className = 'cover-bar-top';
+
+  // 案件名（可点击改名）
+  const nameEl = document.createElement('div');
+  nameEl.className = 'cover-bar-name';
+  nameEl.textContent = state.matter.name;
+  nameEl.title = '点击修改案件名称';
+  nameEl.addEventListener('click', () => startRenameMatter(nameEl));
+  top.appendChild(nameEl);
+
+  // 中间留白（顶部全折叠：关键要素都收进"展开全部"里）
+  const spacer = document.createElement('div');
+  spacer.className = 'cover-bar-spacer';
+  top.appendChild(spacer);
+
+  // 操作按钮组（日志 / 邮寄 / 文件夹 / 提醒）
+  const acts = document.createElement('div');
+  acts.className = 'cover-bar-acts';
+  buildCoverActions(acts);
+  top.appendChild(acts);
+
+  // 展开/收起按钮
+  const toggle = document.createElement('button');
+  toggle.className = 'cover-toggle';
+  toggle.innerHTML = '<span class="ct-label">案件信息</span><span class="ct-arrow">' + (coverExpanded ? '⌃' : '⌄') + '</span>';
+  toggle.title = coverExpanded ? '收起案件信息' : '展开案件信息';
+  toggle.addEventListener('click', () => { coverExpanded = !coverExpanded; renderBoard(); });
+  top.appendChild(toggle);
+
+  bar.appendChild(top);
+
+  // 展开态：完整封皮（横向网格平铺所有要素）
+  if (coverExpanded) {
+    const panel = document.createElement('div');
+    panel.className = 'cover-panel';
+    renderCoverFieldsGrid(panel);
+    bar.appendChild(panel);
+  }
+
+  slot.appendChild(bar);
+  updateRecordCounts();
+}
+
+function startRenameMatter(nameEl) {
+  if (nameEl.dataset.editing === '1') return;
+  nameEl.dataset.editing = '1';
+  const old = state.matter.name;
+  nameEl.innerHTML = '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = old;
+  input.className = 'cover-name-input';
+  nameEl.appendChild(input);
+  input.focus(); input.select();
+  let saved = false;
+  const finish = async () => {
+    if (saved) return; saved = true;
+    const v = input.value.trim();
+    if (v && v !== old) { await window.api.renameMatter(state.matter.id, v); await loadAll(state.matter.id); }
+    else renderBoard();
+  };
+  input.addEventListener('blur', finish);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { saved = true; renderBoard(); }
+  });
+}
+
+/* ---------- 4.1b 案件信息列（保留：完整封皮，供展开态复用其字段渲染）---------- */
+// 构建操作按钮组（文件夹/日志/邮寄/提醒），供信息条复用
+function buildCoverActions(acts) {
+  const logBtn = document.createElement('button');
+  logBtn.className = 'cover-act';
+  logBtn.innerHTML = '📓 日志 <span class="cnt" id="cnt-logs"></span>';
+  logBtn.title = '办案日志';
+  logBtn.addEventListener('click', () => openRecords('logs'));
+  acts.appendChild(logBtn);
+
+  const mailBtn = document.createElement('button');
+  mailBtn.className = 'cover-act';
+  mailBtn.innerHTML = '📮 邮寄 <span class="cnt" id="cnt-mails"></span>';
+  mailBtn.title = '邮寄记录';
+  mailBtn.addEventListener('click', () => openRecords('mails'));
+  acts.appendChild(mailBtn);
+
+  const curFolder = (state.matters.find(x => x.id === state.matter.id) || {}).folder || '';
+  const dirBtn = document.createElement('button');
+  dirBtn.className = 'cover-act';
+  dirBtn.innerHTML = '📁 文件夹';
+  dirBtn.title = curFolder ? ('打开：' + curFolder) : '点击关联该案件的本地文件夹';
+  dirBtn.addEventListener('click', async () => {
+    let p = curFolder;
+    if (!p) {
+      p = await window.api.chooseFolder('为「' + state.matter.name + '」选择案件文件夹');
+      if (!p) return;
+      await window.api.setMatterFolder(state.matter.id, p);
+      await loadAll(state.matter.id);
+    }
+    const err = await window.api.openFolder(p);
+    if (err) {
+      if (await confirmDialog({ title: '打开文件夹失败', body: err + '。\n重新选择该案件的文件夹？', okText: '重新选择' })) {
+        const np = await window.api.chooseFolder('为「' + state.matter.name + '」重新选择文件夹');
+        if (np) { await window.api.setMatterFolder(state.matter.id, np); await loadAll(state.matter.id); window.api.openFolder(np); }
+      }
+    }
+  });
+  acts.appendChild(dirBtn);
+
+  const remindOn = (state.matters.find(x => x.id === state.matter.id) || {}).remind ? true : false;
+  const bellBtn = document.createElement('button');
+  bellBtn.className = 'cover-act' + (remindOn ? ' bell-on' : '');
+  bellBtn.innerHTML = remindOn ? '🔔 提醒中' : '🔕 提醒关';
+  bellBtn.title = remindOn ? '该案件已开启期限提醒' : '点击开启该案件的期限提醒';
+  bellBtn.addEventListener('click', async () => {
+    const turningOn = !remindOn;
+    await window.api.setMatterRemind(state.matter.id, turningOn);
+    await loadAll(state.matter.id);
+    const { focus } = await refreshBell();
+    if (turningOn && !focus.some(it => it.matter_id === state.matter.id)) {
+      notify('提醒已开启，但该案件封皮中暂未发现可识别的日期。\n\n在任意要素的内容里填上日期即可被自动扫描，例如：\n上诉截止日：2026-06-28\n开庭日期：2026年7月1日 上午9:30\n\n临期 7 天内会亮起顶栏铃铛红点并弹系统通知。', '提醒已开启');
+    }
+  });
+  acts.appendChild(bellBtn);
+}
+
+function updateRecordCounts() {
+  window.api.recordCounts(state.matter.id).then(c => {
+    const l = document.getElementById('cnt-logs');
+    const m = document.getElementById('cnt-mails');
+    if (l) l.textContent = c.logs || '';
+    if (m) m.textContent = c.mails || '';
+  });
+}
+
+// 展开态：把全部封皮要素以网格平铺，末尾是"添加要素"和"复制案件信息"
+function renderCoverFieldsGrid(panel) {
+  const grid = document.createElement('div');
+  grid.className = 'cover-grid';
+  state.matter.cover_info.forEach((pair, idx) => {
+    grid.appendChild(renderCoverField(pair, idx));
+  });
+  panel.appendChild(grid);
+
+  const footer = document.createElement('div');
+  footer.className = 'cover-panel-footer';
+  footer.appendChild(renderCoverAddField());
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'cover-copy-btn';
+  copyBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg><span>复制案件信息</span>';
+  copyBtn.title = '把案件名与全部封皮要素复制为规整文本';
+  copyBtn.addEventListener('click', () => copyMatterInfo(copyBtn));
+  footer.appendChild(copyBtn);
+  panel.appendChild(footer);
+}
+
+/* ---------- 旧的完整封皮列（已不再直接使用，保留以防回退）---------- */
 function renderCoverColumn() {
   const col = document.createElement('div');
   col.className = 'column cover-column';
@@ -939,6 +1104,35 @@ function renderStageColumn(stage) {
 
   const head = document.createElement('div');
   head.className = 'column-head';
+  // 列头可拖动以重排阶段顺序
+  head.draggable = true;
+  head.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/stage', String(stage.id));
+    e.dataTransfer.effectAllowed = 'move';
+    col.classList.add('stage-dragging');
+  });
+  head.addEventListener('dragend', () => col.classList.remove('stage-dragging'));
+  // 列作为放置目标
+  col.addEventListener('dragover', (e) => {
+    const types = e.dataTransfer.types || [];
+    if (types.includes && types.includes('text/stage')) {
+      e.preventDefault();
+      col.classList.add('stage-drop-target');
+    }
+  });
+  col.addEventListener('dragleave', () => col.classList.remove('stage-drop-target'));
+  col.addEventListener('drop', async (e) => {
+    const types = e.dataTransfer.types || [];
+    if (!(types.includes && types.includes('text/stage'))) return;
+    e.preventDefault();
+    col.classList.remove('stage-drop-target');
+    const draggedId = parseInt(e.dataTransfer.getData('text/stage'), 10);
+    if (!draggedId || draggedId === stage.id) return;
+    const order = state.matter.stages.map(s => s.id);
+    const targetIdx = order.indexOf(stage.id);
+    await window.api.moveStage(draggedId, targetIdx);
+    refreshMatter();
+  });
 
   const title = document.createElement('div');
   title.className = 'column-title';
@@ -1035,6 +1229,19 @@ function renderCard(task) {
     refreshMatter();
   });
 
+  // 截止日期按钮（设了就进日程）
+  const dueBtn = document.createElement('button');
+  const dueInfo = task.due_date ? formatDue(task.due_date) : null;
+  dueBtn.className = 'card-due-btn' + (task.due_date ? ' has-due' : '') + (dueInfo && dueInfo.urgent ? ' due-urgent' : '') + (dueInfo && dueInfo.over ? ' due-over' : '');
+  dueBtn.title = task.due_date ? ('截止 ' + task.due_date + '（已加入日程，点击修改）') : '设置截止日期（设置后进入日程与提醒）';
+  dueBtn.innerHTML = task.due_date
+    ? '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg><span>' + dueInfo.text + '</span>'
+    : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/></svg>';
+  dueBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openTaskDuePicker(task, dueBtn);
+  });
+
   circle.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (task.is_completed) {
@@ -1071,8 +1278,53 @@ function renderCard(task) {
 
   card.appendChild(circle);
   card.appendChild(content);
+  if (!task.is_completed) card.appendChild(dueBtn);
   card.appendChild(del);
   return card;
+}
+
+// 把截止日期格式化为"MM/DD · 还剩X天"，并标记紧急/逾期
+function formatDue(dateStr) {
+  const md = dateStr.slice(5).replace('-', '/'); // 06/20
+  const d = dayDiff(dateStr); // 距今天数：>0 未来，0 今天，<0 已过
+  let rel, urgent = false, over = false;
+  if (d > 0) { rel = '还剩 ' + d + ' 天'; if (d <= 3) urgent = true; }
+  else if (d === 0) { rel = '今天'; urgent = true; }
+  else { rel = '已过 ' + (-d) + ' 天'; over = true; }
+  return { text: md + ' · ' + rel, urgent, over };
+}
+
+// 任务截止日期选择：用一个原生 date input 弹出选择，设/清后刷新
+function openTaskDuePicker(task, anchorBtn) {
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.value = task.due_date || '';
+  input.className = 'task-due-input';
+  document.body.appendChild(input);
+  const rect = anchorBtn.getBoundingClientRect();
+  input.style.position = 'fixed';
+  input.style.left = Math.min(rect.left, window.innerWidth - 200) + 'px';
+  input.style.top = (rect.bottom + 4) + 'px';
+  input.style.zIndex = '9999';
+  input.focus();
+  try { input.showPicker && input.showPicker(); } catch (e) {}
+  let done = false;
+  const finish = async (val) => {
+    if (done) return; done = true;
+    input.remove();
+    if (val !== (task.due_date || '')) {
+      await window.api.setTaskDue(task.id, val || null);
+      refreshMatter();
+      if (currentView === 'home') renderHome();
+    }
+  };
+  input.addEventListener('change', () => finish(input.value));
+  input.addEventListener('blur', () => setTimeout(() => finish(input.value), 150));
+  // 右键或按 Delete 清除日期
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { done = true; input.remove(); }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && task.due_date) { finish(''); }
+  });
 }
 
 /* ---------- 4.4 添加新任务 ---------- */
@@ -2134,7 +2386,7 @@ const dayDiff = (dateStr) => {
 };
 
 async function refreshBell() {
-  const items = await window.api.listDeadlines();
+  const items = await window.api.listReminders();
   // 关注窗口：过期 30 天内 ~ 未来 30 天
   const focus = items.filter(it => { const d = dayDiff(it.date); return d >= -30 && d <= 30; });
   const urgent = focus.filter(it => { const d = dayDiff(it.date); return d >= 0 && d <= 7; });
@@ -2149,13 +2401,13 @@ async function renderBellPop() {
   const title = document.createElement('div');
   title.className = 'set-label';
   title.style.padding = '4px 8px 8px';
-  title.textContent = '期限提醒（开启 🔔 的案件，自动扫描封皮日期）';
+  title.textContent = "期限提醒（开启提醒的案件：封皮日期、任务截止日、日程事件都会提醒）";
   pop.appendChild(title);
 
   if (!focus.length) {
     pop.appendChild(Object.assign(document.createElement('div'), {
       className: 'bell-empty',
-      textContent: '前后 30 天内没有期限。到案件信息列点「🔕 提醒关」可为案件开启提醒。'
+      textContent: '前后 30 天内没有临期事项。在案件信息条点提醒按钮可为案件开启提醒。'
     }));
     return;
   }

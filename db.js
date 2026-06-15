@@ -14,7 +14,7 @@ let db = null;
 let dbPath = null;
 let backupDir = null;
 
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 const FULL_BACKUP_INTERVAL = 12 * 3600 * 1000;
 const FULL_BACKUP_KEEP = 60;
 
@@ -189,6 +189,9 @@ async function init(userDataDir) {
   }
   if (!hasColumn('matters', 'archived')) {
     run("ALTER TABLE matters ADD COLUMN archived INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!hasColumn('tasks', 'due_date')) {
+    run("ALTER TABLE tasks ADD COLUMN due_date TEXT");
   }
   // 同步用全局唯一 ID（uid）：给六张实体表加 uid 列并为存量数据回填
   const UID_TABLES = ['matters', 'stages', 'tasks', 'logs', 'mails', 'events'];
@@ -538,6 +541,49 @@ function getDeadlines() {
   return out;
 }
 
+// 统一提醒源：开启提醒（remind=1）的案件，其全部带日期的事项——
+// 封皮日期 + 任务截止日 + 结构化事件，都纳入提醒。这样"日程"上属于已开提醒案件的事，都会被"催"。
+function getReminders() {
+  const out = [];
+  // a) 封皮日期（沿用 getDeadlines，已只取 remind=1 的案件）
+  for (const dl of getDeadlines()) {
+    out.push({ matter_id: dl.matter_id, matter_name: dl.matter_name, label: dl.label, date: dl.date, source: 'cover' });
+  }
+  // b) 已开提醒案件的任务截止日
+  const dueTasks = all(`
+    SELECT t.content, t.due_date, m.id AS matter_id, m.name AS matter_name
+    FROM tasks t JOIN stages s ON t.stage_id = s.id JOIN matters m ON s.matter_id = m.id
+    WHERE m.remind = 1 AND m.archived = 0 AND t.is_completed = 0
+      AND t.due_date IS NOT NULL AND t.due_date != ''
+  `);
+  for (const t of dueTasks) {
+    out.push({ matter_id: t.matter_id, matter_name: t.matter_name, label: '任务：' + t.content, date: t.due_date, source: 'task' });
+  }
+  // c) 已开提醒案件的结构化事件（未完成）
+  const evs = all(`
+    SELECT e.title, e.event_date, e.kind, m.id AS matter_id, m.name AS matter_name
+    FROM events e JOIN matters m ON e.matter_id = m.id
+    WHERE m.remind = 1 AND m.archived = 0 AND e.done = 0
+      AND e.event_date IS NOT NULL AND e.event_date != ''
+  `);
+  const kindLabel = { hearing: '开庭', evidence: '举证', mediation: '调解', deadline: '期限', custom: '' };
+  for (const e of evs) {
+    const pre = kindLabel[e.kind] ? (kindLabel[e.kind] + '：') : '';
+    out.push({ matter_id: e.matter_id, matter_name: e.matter_name, label: pre + e.title, date: e.event_date, source: 'event' });
+  }
+  // 去重（同案同日同标题）
+  const seen = new Set();
+  const dedup = [];
+  for (const it of out) {
+    const k = it.matter_id + '|' + it.date + '|' + it.label;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    dedup.push(it);
+  }
+  dedup.sort((a, b) => a.date.localeCompare(b.date));
+  return dedup;
+}
+
 /* ============================================================
    结构化事件（events）：开庭/举证/调解续封/自定义，支撑首页与日历
    ============================================================ */
@@ -635,8 +681,35 @@ function getAgenda(opts) {
     });
   }
 
+  // c) 带截止日期的未完成任务，作为待办事件并入日程
+  const dueTasks = all(`
+    SELECT t.id, t.uid, t.content, t.due_date, t.is_completed,
+           m.id AS matter_id, m.name AS matter_name
+    FROM tasks t
+    JOIN stages s ON t.stage_id = s.id
+    JOIN matters m ON s.matter_id = m.id
+    WHERE t.due_date IS NOT NULL AND t.due_date != '' AND m.archived = 0
+  `);
+  for (const t of dueTasks) {
+    if (!inRange(t.due_date)) continue;
+    items.push({
+      source: 'task', id: 'task-' + t.id, task_id: t.id, date: t.due_date, time: '',
+      kind: 'task', title: t.content, note: '',
+      matter_id: t.matter_id, matter_name: t.matter_name, done: !!t.is_completed
+    });
+  }
+
   items.sort((a, b) => (a.date + (a.time || '99:99')).localeCompare(b.date + (b.time || '99:99')));
   return items;
+}
+
+// 设置/清除任务截止日期（设了就会进日程）
+function setTaskDue(taskId, due) {
+  const d = due ? String(due) : null;
+  run('UPDATE tasks SET due_date = ? WHERE id = ?', [d, taskId]);
+  persist();
+  const uid = uidById('tasks', taskId);
+  if (uid) logOp('task', uid, 'due', { due_date: d });
 }
 
 // 首页统计卡 + 待办清单
@@ -922,6 +995,11 @@ function applyOp(op) {
       if (id) run('UPDATE stages SET name = ? WHERE id = ?', [p.name, id]);
       break;
     }
+    case 'stage:move': {
+      const id = idByUid('stages', uid);
+      if (id) moveStage(id, p.to_index || 0);
+      break;
+    }
     case 'stage:delete': {
       const id = idByUid('stages', uid);
       if (id) { run('DELETE FROM stages WHERE id = ?', [id]); run('DELETE FROM tasks WHERE stage_id = ?', [id]); }
@@ -951,6 +1029,11 @@ function applyOp(op) {
     case 'task:delete': {
       const id = idByUid('tasks', uid);
       if (id) run('DELETE FROM tasks WHERE id = ?', [id]);
+      break;
+    }
+    case 'task:due': {
+      const id = idByUid('tasks', uid);
+      if (id) run('UPDATE tasks SET due_date = ? WHERE id = ?', [p.due_date || null, id]);
       break;
     }
 
@@ -1080,6 +1163,20 @@ function renameStage(stageId, name) {
   persist();
   const uid = uidById('stages', stageId);
   if (uid) logOp('stage', uid, 'rename', { name });
+}
+
+// 重排阶段顺序：把 stageId 移动到目标索引 toIndex（同案件内）
+function moveStage(stageId, toIndex) {
+  const st = one('SELECT matter_id FROM stages WHERE id = ?', [stageId]);
+  if (!st) return;
+  const stages = all('SELECT id FROM stages WHERE matter_id = ? ORDER BY position ASC, id ASC', [st.matter_id]);
+  const ids = stages.map(s => s.id).filter(id => id !== stageId);
+  const idx = Math.max(0, Math.min(toIndex, ids.length));
+  ids.splice(idx, 0, stageId);
+  ids.forEach((id, i) => run('UPDATE stages SET position = ? WHERE id = ?', [i, id]));
+  persist();
+  const uid = uidById('stages', stageId);
+  if (uid) logOp('stage', uid, 'move', { to_index: idx });
 }
 
 function deleteStage(stageId) {
@@ -1329,13 +1426,13 @@ module.exports = {
   setMatterIcon, setMatterRemind, setMatterFolder, updateCoverInfo, deleteMatter,
   listLogs, addLog, deleteLog,
   listMails, addMail, deleteMail,
-  getRecordCounts, getDeadlines,
+  getRecordCounts, getDeadlines, getReminders,
   listEvents, addEvent, updateEvent, setEventDone, deleteEvent,
   getAgenda, getDashboard,
   importDemoData, clearDemoAndStart, getDemoState, isDemoMode, isDemoDismissed,
   logOp, exportSyncPackage, importSyncPackage, getSyncInfo, getDeviceId, genUid,
-  addStage, renameStage, deleteStage,
-  addTask, updateTaskContent, setTaskCompleted, deleteTask, moveTask,
+  addStage, renameStage, moveStage, deleteStage,
+  addTask, updateTaskContent, setTaskCompleted, setTaskDue, deleteTask, moveTask,
   getTemplates, saveTemplate, resetTemplate,
   exportTemplate, importTemplate,
   createTemplate, deleteTemplate,
