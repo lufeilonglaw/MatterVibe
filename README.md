@@ -48,11 +48,11 @@ Electron · sql.js（SQLite/WASM）· 原生 HTML/CSS/JS · Phosphor Icons（MIT
 
 ## 状态
 
-当前版本 1.0.0（正式版），支持 macOS 与 Windows。
+当前版本 1.3.2（正式版），支持 macOS 与 Windows。
 由鲁飞龙（北京市中闻律师事务所律师）以 AI Vibe Coding 模式与 Anthropic Claude 协作开发并持续维护。
 欢迎通过 Issue 提出意见与建议。
 
 > 本仓库仅含程序代码，**不含任何真实案件数据**。数据库与备份文件均被 .gitignore 排除，
 > 仅存在于用户本地设备。
 
-联系：lufeilong@gmail.com
+联系：lufeilong#gmail.com
