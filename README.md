@@ -55,4 +55,4 @@ Electron · sql.js（SQLite/WASM）· 原生 HTML/CSS/JS · Phosphor Icons（MIT
 > 本仓库仅含程序代码，**不含任何真实案件数据**。数据库与备份文件均被 .gitignore 排除，
 > 仅存在于用户本地设备。
 
-联系：lufeilong@gmail.com
+联系：lufeilong#gmail.com
